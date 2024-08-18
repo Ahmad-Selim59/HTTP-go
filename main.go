@@ -3,23 +3,31 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"net"
 	"strings"
 	"time"
 )
 
-func main() {
-	sendHttpRequest("httpbin.org", 80, "/anything", "GET")
+type HttpResponse struct {
+	Status  string
+	Headers map[string]string
+	Body    string
 }
 
-func sendHttpRequest(address string, portNum int, path string, methodType string) {
+func main() {
+	response, error := sendHttpRequest("httpbin.org", 80, "/anything", "GET")
+	if error != nil {
+		fmt.Println(error)
+	} else {
+		fmt.Println(response)
+	}
+}
+
+func sendHttpRequest(address string, portNum int, path string, methodType string) (*HttpResponse, error) {
 	url := fmt.Sprintf("%s:%d", address, portNum)
 	conn, err := net.Dial("tcp", url)
-
 	if err != nil {
-		log.Fatalf("failed to connect to %s on port %d. Received the following error %v", address, portNum, err)
-		return
+		return nil, err
 	}
 
 	defer conn.Close()
@@ -29,23 +37,20 @@ func sendHttpRequest(address string, portNum int, path string, methodType string
 	reader := bufio.NewReader(conn)
 	status, err := reader.ReadString('\n')
 	if err != nil {
-		log.Fatalf("Failed to read status line - %v", err)
+		return nil, err
 	}
-
-	fmt.Printf("status: %s", status)
 
 	headers := make(map[string]string)
 
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Printf("error encountered %v", err)
-			break
+			return nil, err
 		}
 		line = strings.TrimSpace(line)
 
 		if line == "" {
-			break //reached end
+			break // reached end of headers
 		}
 
 		parts := strings.SplitN(line, ":", 2)
@@ -54,17 +59,18 @@ func sendHttpRequest(address string, portNum int, path string, methodType string
 		}
 	}
 
-	fmt.Println("Headers:")
-	for key, value := range headers {
-		fmt.Printf("%s: %s\n", key, value)
+	var body string
+	if _, ok := headers["Content-Length"]; ok {
+		bodyBytes := make([]byte, 1024)
+		n, _ := reader.Read(bodyBytes)
+		body = string(bodyBytes[:n])
 	}
 
-	if contentLength, ok := headers["Content-Length"]; ok {
-		fmt.Printf("Body (first %s bytes):\n", contentLength)
-		body := make([]byte, 1024)
-		n, _ := reader.Read(body)
-		fmt.Println(string(body[:n]))
-	} else {
-		fmt.Println("No Content-Length specified or no body")
+	response := &HttpResponse{
+		Status:  strings.TrimSpace(status),
+		Headers: headers,
+		Body:    body,
 	}
+
+	return response, nil
 }
