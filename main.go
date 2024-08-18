@@ -10,10 +10,10 @@ import (
 )
 
 func main() {
-	tcpServer("httpbin.org", 80, "/anything", "GET")
+	sendHttpRequest("httpbin.org", 80, "/anything", "GET")
 }
 
-func tcpServer(address string, portNum int, path string, methodType string) {
+func sendHttpRequest(address string, portNum int, path string, methodType string) {
 	url := fmt.Sprintf("%s:%d", address, portNum)
 	conn, err := net.Dial("tcp", url)
 
@@ -24,7 +24,7 @@ func tcpServer(address string, portNum int, path string, methodType string) {
 
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
-	fmt.Fprintf(conn, "%s %s HTTP/1.0\r\n\r\n", methodType, path)
+	fmt.Fprintf(conn, "%s %s HTTP/1.0\r\nHost: %s\r\n\r\n", methodType, path, address)
 
 	reader := bufio.NewReader(conn)
 	status, err := reader.ReadString('\n')
