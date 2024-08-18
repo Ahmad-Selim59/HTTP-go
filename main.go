@@ -15,7 +15,7 @@ type HttpResponse struct {
 }
 
 func main() {
-	response, error := sendHttpRequest("httpbin.org", 80, "/anything", "GET")
+	response, error := sendHttpRequest("httpbin.org", 80, "/anything", "GET", map[string]string{}, "")
 	if error != nil {
 		fmt.Println(error)
 	} else {
@@ -23,7 +23,7 @@ func main() {
 	}
 }
 
-func sendHttpRequest(address string, portNum int, path string, methodType string) (*HttpResponse, error) {
+func sendHttpRequest(address string, portNum int, path string, methodType string, headers map[string]string, requestBody string) (*HttpResponse, error) {
 	url := fmt.Sprintf("%s:%d", address, portNum)
 	conn, err := net.Dial("tcp", url)
 	if err != nil {
@@ -32,7 +32,25 @@ func sendHttpRequest(address string, portNum int, path string, methodType string
 
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
-	fmt.Fprintf(conn, "%s %s HTTP/1.0\r\nHost: %s\r\n\r\n", methodType, path, address)
+
+	requestLine := fmt.Sprintf("%s %s HTTP/1.0\r\n", methodType, path)
+	if methodType == "POST" || methodType == "PUT" {
+		headers["Content-Length"] = fmt.Sprintf("%d", len(requestBody))
+		if _, ok := headers["Content-Type"]; !ok {
+			headers["Content-Type"] = "application/x-www-form-urlencoded" // Default type if not set
+		}
+	}
+
+	fullRequest := requestLine
+	for key, value := range headers {
+		fullRequest += fmt.Sprintf("%s: %s\r\n", key, value)
+	}
+	fullRequest += "\r\n" // End of headers
+	if methodType == "POST" || methodType == "PUT" {
+		fullRequest += requestBody
+	}
+
+	fmt.Fprint(conn, fullRequest)
 
 	reader := bufio.NewReader(conn)
 	status, err := reader.ReadString('\n')
@@ -40,7 +58,7 @@ func sendHttpRequest(address string, portNum int, path string, methodType string
 		return nil, err
 	}
 
-	headers := make(map[string]string)
+	headersMap := make(map[string]string)
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -55,12 +73,12 @@ func sendHttpRequest(address string, portNum int, path string, methodType string
 
 		parts := strings.SplitN(line, ":", 2)
 		if len(parts) == 2 {
-			headers[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+			headersMap[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 		}
 	}
 
 	var body string
-	if _, ok := headers["Content-Length"]; ok {
+	if _, ok := headersMap["Content-Length"]; ok {
 		bodyBytes := make([]byte, 1024)
 		n, _ := reader.Read(bodyBytes)
 		body = string(bodyBytes[:n])
@@ -68,7 +86,7 @@ func sendHttpRequest(address string, portNum int, path string, methodType string
 
 	response := &HttpResponse{
 		Status:  strings.TrimSpace(status),
-		Headers: headers,
+		Headers: headersMap,
 		Body:    body,
 	}
 
