@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -15,7 +17,7 @@ type HttpResponse struct {
 }
 
 func main() {
-	response, error := sendHttpRequest("httpbin.org", 80, "/anything", "GET", map[string]string{}, "")
+	response, error := sendHttpRequest("34.76.19.201", 8080, "/sessions", "GET", map[string]string{}, "")
 	if error != nil {
 		fmt.Println(error)
 	} else {
@@ -78,10 +80,32 @@ func sendHttpRequest(address string, portNum int, path string, methodType string
 	}
 
 	var body string
-	if _, ok := headersMap["Content-Length"]; ok {
-		bodyBytes := make([]byte, 1024)
-		n, _ := reader.Read(bodyBytes)
-		body = string(bodyBytes[:n])
+	if contentLength, ok := headersMap["Content-Length"]; ok {
+		fmt.Println("Content-Length:", contentLength)
+		contentLengthInt, _ := strconv.Atoi(contentLength)
+		bodyBytes := make([]byte, contentLengthInt)
+		_, err := io.ReadFull(reader, bodyBytes)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+		body = string(bodyBytes)
+	} else {
+		// Fallback if Content-Length doesn't work or isn't available
+		var bodyBuilder strings.Builder
+		for {
+			part := make([]byte, 1024)
+			n, err := reader.Read(part)
+			if n > 0 {
+				bodyBuilder.Write(part[:n])
+			}
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+		body = bodyBuilder.String()
 	}
 
 	response := &HttpResponse{
